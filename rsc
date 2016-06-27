@@ -1,23 +1,24 @@
 #!/usr/bin/env python
 from __future__ import print_function
-import argparse
-import os
-import sys
 
-import cPickle
-import urlparse
-import socket
-from time import sleep
-import time
-import requests
+import argparse
 import base64
-from transitions import Machine, State
+import cPickle
+import os
+import socket
+import sys
+import time
+import urlparse
 from ConfigParser import SafeConfigParser
+
+import requests
+from transitions import Machine, State
+
 
 class IOState(State):
     def __init__(self, name, on_enter=None, on_exit=None,
-                 ignore_invalid_triggers=False, multiline=False,handler=None):
-        State.__init__(self,name,on_enter,on_exit,ignore_invalid_triggers)
+                 ignore_invalid_triggers=False, multiline=False, handler=None):
+        State.__init__(self, name, on_enter, on_exit, ignore_invalid_triggers)
         self.multiline = multiline
         self.handler = handler
 
@@ -26,7 +27,7 @@ def read_config():
     hd = os.path.expanduser('~')
     config_path = os.path.join(hd, '.rsc')
     config = SafeConfigParser()
-    config.read(os.path.join(config_path,'config.ini'))
+    config.read(os.path.join(config_path, 'config.ini'))
     return config
 
 
@@ -35,17 +36,16 @@ def save_config(config):
     config_path = os.path.join(hd, '.rsc')
     if not os.path.isdir(config_path):
         os.mkdir(config_path)
-    with open(os.path.join(config_path,'config.ini'), 'wb') as configfile:
+    with open(os.path.join(config_path, 'config.ini'), 'wb') as configfile:
         config.write(configfile)
 
 
 class Cli(object):
-
     def explain_url(self):
-        print ("What is the URL? (<scheme>://<netloc>/<path>;<params>?<query>#<fragment> format please):")
-        print ("[{}]: ".format(self.url if self.url is not None else " "), end="")
+        print("What is the URL? (<scheme>://<netloc>/<path>;<params>?<query>#<fragment> format please):")
+        print("[{}]: ".format(self.url if self.url is not None else " "), end="")
 
-    def validate_url(self,line):
+    def validate_url(self, line):
         if len(line) == 0 and not self.url:
             self.explain_url()
             return
@@ -56,22 +56,21 @@ class Cli(object):
 
         self.ask_for_method()
 
-
-    methods = ["GET","POST","PUT","DELETE","PATCH"]
+    methods = ["GET", "POST", "PUT", "DELETE", "PATCH"]
 
     def explain_method(self):
-        print ("Choose method:")
+        print("Choose method:")
         for i, method in enumerate(Cli.methods):
-            print ("[{0}] {1}".format(i+1,method))
-        print ("[{}]: ".format(self.method if self.method is not None else " "), end="")
+            print("[{0}] {1}".format(i + 1, method))
+        print("[{}]: ".format(self.method if self.method is not None else " "), end="")
 
     def validate_method(self, line):
         try:
             if len(line) > 0:
                 method_i = int(line)
-                method = Cli.methods[method_i-1]
+                method = Cli.methods[method_i - 1]
                 self.method = method
-                self.config.set("history","method",method)
+                self.config.set("history", "method", method)
             else:
                 if not self.method:
                     self.explain_method()
@@ -105,8 +104,9 @@ class Cli(object):
 
     def explain_authheaders(self):
 
-        print ("Do you have some special required http headers? Paste them in format header_name=header_value. Leave empty if you finished or want to skip.")
-        print ("[ ]: ", end="")
+        print(
+            "Do you have some special required http headers? Paste them in format header_name=header_value. Leave empty if you finished or want to skip.")
+        print("[ ]: ", end="")
 
     def validate_authheaders(self, line):
 
@@ -117,9 +117,8 @@ class Cli(object):
             pass
 
     def explain_other(self):
-        print ("Do you have another example? Y/N")
+        print("Do you have another example? Y/N")
         print('[N]: ', end='')
-
 
     def validate_other(self, line):
         if 'N' == line.upper() or len(line) == 0:
@@ -132,11 +131,11 @@ class Cli(object):
     def run_scan(self):
 
         payload = {
-        "url": self.url,
-        "method": self.method,
-        "content": None
+            "url": self.url,
+            "method": self.method,
+            "content": None
         }
-        r = requests.post(os.environ.get('RSC_URI')+'/api/snippet/download', json=payload)
+        r = requests.post(os.environ.get('RSC_URI') + '/api/snippet/download', json=payload)
         size = int(r.headers['Content-Length'].strip())
         bytes = 0
         for buf in r.iter_content(1024):
@@ -144,18 +143,18 @@ class Cli(object):
                 progress(bytes, size, "downloading attacks")
                 bytes += len(buf)
         progress(1, 1, "downloaded attacks")
-        print ("\nattacks downloaded")
+        print("\nattacks downloaded")
         if r.status_code == 200:
             resp = r.json()
             attacks = cPickle.loads(resp['payloads'].encode("utf-8"))
             attacks_with_responses = {}
-            for k,v in attacks.iteritems():
+            for k, v in attacks.iteritems():
                 responses = do_attack(k, v)
                 attacks_with_responses[k] = responses
 
             payload['payloads'] = cPickle.dumps(attacks_with_responses)
-            r = requests.post(os.environ.get('RSC_URI')+'/api/snippet/upload', json=payload)
-            print ("Report:")
+            r = requests.post(os.environ.get('RSC_URI') + '/api/snippet/upload', json=payload)
+            print("Report:")
             self.endpoints_with_methods = r.json()['report']
             self.show_result()
 
@@ -166,9 +165,9 @@ class Cli(object):
                 issues.add(v.get('name'))
 
         for i in issues:
-            print ("{}, level high".format(i))
+            print("{}, level high".format(i))
 
-        print ("For full report head to: https://www.restsecured.xyz/blablabla1234")
+        print("For full report head to: https://www.restsecured.xyz/blablabla1234")
 
     #              -----------------------------------\
     #             V                                   |
@@ -178,15 +177,15 @@ class Cli(object):
     states = [
         "start",
         "hello",
-        IOState(name='url',on_enter='explain_url',  handler=validate_url, multiline= False),
+        IOState(name='url', on_enter='explain_url', handler=validate_url, multiline=False),
         IOState(name="method", on_enter='explain_method', handler=validate_method, multiline=False),
         IOState(name="payload", on_enter='explain_payload', handler=validate_payload, multiline=True),
         IOState(name="mime", on_enter='explain_mime', handler=validate_mime, multiline=False),
         IOState(name="authheaders", on_enter='explain_authheaders', handler=validate_authheaders, multiline=False),
         IOState(name="other", on_enter='explain_other', handler=validate_other, multiline=False),
-        State(name="scan",on_enter="run_scan"),
-        State(name="result",on_enter="present_report")
-        ]
+        State(name="scan", on_enter="run_scan"),
+        State(name="result", on_enter="present_report")
+    ]
 
     transitions = [
         {'trigger': 'say_hello', 'source': 'start', 'dest': 'hello'},
@@ -201,25 +200,24 @@ class Cli(object):
 
     ]
 
-
     def welcome_message(self):
-        print ("This is Rest Secured CLI scanner. We will ask few questions")
+        print("This is Rest Secured CLI scanner. We will ask few questions")
 
     def __init__(self, config):
         # Initialize the state machine
         self.machine = Machine(model=self, states=Cli.states, initial='start', transitions=Cli.transitions)
         self.machine.on_enter_hello("welcome_message")
         if config.has_section("history"):
-            if config.has_option("history","url"):
-                self.url = config.get("history","url")
+            if config.has_option("history", "url"):
+                self.url = config.get("history", "url")
             else:
                 self.url = None
-            if config.has_option("history","method"):
-                self.method = config.get("history","method")
+            if config.has_option("history", "method"):
+                self.method = config.get("history", "method")
             else:
                 self.method = None
-            if config.has_option("history","payload"):
-                self.payload = base64.b64decode(config.get("history","payload"))
+            if config.has_option("history", "payload"):
+                self.payload = base64.b64decode(config.get("history", "payload"))
             else:
                 self.payload = None
         else:
@@ -232,12 +230,13 @@ class Cli(object):
     def start(self):
         self.say_hello()
         self.ask_for_url()
+
     def is_finished(self):
         return self.state == "result"
 
     def input(self):
         s = self.machine.get_state(self.state)
-        if isinstance(s,IOState):
+        if isinstance(s, IOState):
             if s.multiline:
                 pass
             else:
@@ -248,13 +247,11 @@ class Cli(object):
 
 
 def authorize_cli(args):
-    print (args.token)
+    print(args.token)
     c = read_config()
     c.add_section('main')
-    c.set("main","token",args.token)
+    c.set("main", "token", args.token)
     save_config(c)
-
-
 
 
 def progress(count, total, suffix=''):
@@ -269,14 +266,14 @@ def progress(count, total, suffix=''):
 
 
 def setup_socket(host, port, ssl):
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock.settimeout(30)
+    sock.connect((host, port))
+    if ssl:
+        import ssl
+        sock = ssl.wrap_socket(sock)
+    return sock
 
-        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        sock.settimeout(30)
-        sock.connect((host, port))
-        if ssl:
-            import ssl
-            sock = ssl.wrap_socket(sock)
-        return sock
 
 def do_attack(url, attacks):
     parsed = urlparse.urlparse(url)
@@ -288,10 +285,10 @@ def do_attack(url, attacks):
     else:
         port = 80
     if ":" in netloc:
-        netloc, port = netloc.split(":",1)
+        netloc, port = netloc.split(":", 1)
     for i, attack in enumerate(attacks):
-        progress(i,len(attacks), attack['injection'].get('attack'))
-        sock = setup_socket(netloc,int(port),ssl)
+        progress(i, len(attacks), attack['injection'].get('attack'))
+        sock = setup_socket(netloc, int(port), ssl)
         start = time.time()
         request = attack['request']
         sock.send(request)
@@ -306,8 +303,9 @@ def do_attack(url, attacks):
         attack['url'] = url
         attack['response'] = received
         attack['elapsed'] = elapsed
-        #{"data": data, "injection": inj, "node":is_final_node}
+        # {"data": data, "injection": inj, "node":is_final_node}
     return attacks
+
 
 def scan_cli(args):
     try:
@@ -320,10 +318,7 @@ def scan_cli(args):
         save_config(config)
 
 
-
-
-
-parser = argparse.ArgumentParser(description='Rest Secured co-pilot',prog="rsc")
+parser = argparse.ArgumentParser(description='Rest Secured co-pilot', prog="rsc")
 subparsers = parser.add_subparsers()
 parser_foo = subparsers.add_parser('authorize')
 parser_foo.add_argument('token', type=str)
@@ -333,6 +328,6 @@ parser_bar = subparsers.add_parser('scan')
 parser_bar.set_defaults(func=scan_cli)
 
 if __name__ == '__main__':
-    os.environ['RSC_URI']= 'http://127.0.0.1:5000'
+    os.environ['RSC_URI'] = 'http://127.0.0.1:5000'
     args = parser.parse_args(sys.argv[1:])
     args.func(args)
