@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-
+from __future__ import print_function
 import argparse
 import os
 import sys
@@ -10,13 +10,252 @@ import socket
 from time import sleep
 import time
 import requests
+import base64
+from transitions import Machine, State
+from ConfigParser import SafeConfigParser
+
+class IOState(State):
+    def __init__(self, name, on_enter=None, on_exit=None,
+                 ignore_invalid_triggers=False, multiline=False,handler=None):
+        State.__init__(self,name,on_enter,on_exit,ignore_invalid_triggers)
+        self.multiline = multiline
+        self.handler = handler
+
+
+def read_config():
+    hd = os.path.expanduser('~')
+    config_path = os.path.join(hd, '.rsc')
+    config = SafeConfigParser()
+    config.read(os.path.join(config_path,'config.ini'))
+    return config
+
+
+def save_config(config):
+    hd = os.path.expanduser('~')
+    config_path = os.path.join(hd, '.rsc')
+    if not os.path.isdir(config_path):
+        os.mkdir(config_path)
+    with open(os.path.join(config_path,'config.ini'), 'wb') as configfile:
+        config.write(configfile)
+
+
+class Cli(object):
+
+    def explain_url(self):
+        print ("What is the URL? (<scheme>://<netloc>/<path>;<params>?<query>#<fragment> format please):")
+        print ("[{}]: ".format(self.url if self.url is not None else " "), end="")
+
+    def validate_url(self,line):
+        if len(line) == 0 and not self.url:
+            self.explain_url()
+            return
+        elif len(line) > 0:
+            result = urlparse.urlparse(line)
+            self.url = line
+            self.config.set("history", "url", line)
+
+        self.ask_for_method()
+
+
+    methods = ["GET","POST","PUT","DELETE","PATCH"]
+
+    def explain_method(self):
+        print ("Choose method:")
+        for i, method in enumerate(Cli.methods):
+            print ("[{0}] {1}".format(i+1,method))
+        print ("[{}]: ".format(self.method if self.method is not None else " "), end="")
+
+    def validate_method(self, line):
+        try:
+            if len(line) > 0:
+                method_i = int(line)
+                method = Cli.methods[method_i-1]
+                self.method = method
+                self.config.set("history","method",method)
+            else:
+                if not self.method:
+                    self.explain_method()
+                    return
+        except Exception:
+            self.explain_method()
+            return
+
+        if self.method == "GET" or self.method == "DELETE":
+            self.ask_for_special_headers()
+        else:
+            self.ask_for_payload()
+
+    def explain_payload(self):
+        pass
+
+    def validate_payload(self, line):
+        pass
+
+    def explain_mime(self):
+        pass
+
+    def validate_mime(self, line):
+        pass
+
+    def explain_mime(self):
+        pass
+
+    def validate_mime(self, line):
+        pass
+
+    def explain_authheaders(self):
+
+        print ("Do you have some special required http headers? Paste them in format header_name=header_value. Leave empty if you finished or want to skip.")
+        print ("[ ]: ", end="")
+
+    def validate_authheaders(self, line):
+
+        if len(line) == 0:
+            self.ask_for_next()
+        else:
+            # add to list
+            pass
+
+    def explain_other(self):
+        print ("Do you have another example? Y/N")
+        print('[N]: ', end='')
+
+
+    def validate_other(self, line):
+        if 'N' == line.upper() or len(line) == 0:
+            self.do_scan()
+        elif 'Y' == line.upper():
+            self.ask_for_url()
+        else:
+            self.explain_other()
+
+    def run_scan(self):
+
+        payload = {
+        "url": self.url,
+        "method": self.method,
+        "content": None
+        }
+        r = requests.post(os.environ.get('RSC_URI')+'/api/snippet/download', json=payload)
+        size = int(r.headers['Content-Length'].strip())
+        bytes = 0
+        for buf in r.iter_content(1024):
+            if buf:
+                progress(bytes, size, "downloading attacks")
+                bytes += len(buf)
+        progress(1, 1, "downloaded attacks")
+        print ("\nattacks downloaded")
+        if r.status_code == 200:
+            resp = r.json()
+            attacks = cPickle.loads(resp['payloads'].encode("utf-8"))
+            attacks_with_responses = {}
+            for k,v in attacks.iteritems():
+                responses = do_attack(k, v)
+                attacks_with_responses[k] = responses
+
+            payload['payloads'] = cPickle.dumps(attacks_with_responses)
+            r = requests.post(os.environ.get('RSC_URI')+'/api/snippet/upload', json=payload)
+            print ("Report:")
+            self.endpoints_with_methods = r.json()['report']
+            self.show_result()
+
+    def present_report(self):
+        issues = set()
+        for endpoint in self.endpoints_with_methods:
+            for v in endpoint.get('vulnerabilities'):
+                issues.add(v.get('name'))
+
+        for i in issues:
+            print ("{}, level high".format(i))
+
+        print ("For full report head to: https://www.restsecured.xyz/blablabla1234")
+
+    #              -----------------------------------\
+    #             V                                   |
+    #  > helo > url > method  >  authheaders? >   other call?  > scan > result
+    #                    v         /\
+    #                  payload >  mime?
+    states = [
+        "start",
+        "hello",
+        IOState(name='url',on_enter='explain_url',  handler=validate_url, multiline= False),
+        IOState(name="method", on_enter='explain_method', handler=validate_method, multiline=False),
+        IOState(name="payload", on_enter='explain_payload', handler=validate_payload, multiline=True),
+        IOState(name="mime", on_enter='explain_mime', handler=validate_mime, multiline=False),
+        IOState(name="authheaders", on_enter='explain_authheaders', handler=validate_authheaders, multiline=False),
+        IOState(name="other", on_enter='explain_other', handler=validate_other, multiline=False),
+        State(name="scan",on_enter="run_scan"),
+        State(name="result",on_enter="present_report")
+        ]
+
+    transitions = [
+        {'trigger': 'say_hello', 'source': 'start', 'dest': 'hello'},
+        {'trigger': 'ask_for_url', 'source': ['hello', 'other'], 'dest': 'url'},
+        {'trigger': 'ask_for_method', 'source': 'url', 'dest': 'method'},
+        {'trigger': 'ask_for_payload', 'source': 'method', 'dest': 'payload'},
+        {'trigger': 'verify_mime', 'source': 'payload', 'dest': 'mime'},
+        {'trigger': 'ask_for_special_headers', 'source': ['mime', 'method'], 'dest': 'authheaders'},
+        {'trigger': 'ask_for_next', 'source': 'authheaders', 'dest': 'other'},
+        {'trigger': 'do_scan', 'source': 'other', 'dest': 'scan'},
+        {'trigger': 'show_result', 'source': 'scan', 'dest': 'result'},
+
+    ]
+
+
+    def welcome_message(self):
+        print ("This is Rest Secured CLI scanner. We will ask few questions")
+
+    def __init__(self, config):
+        # Initialize the state machine
+        self.machine = Machine(model=self, states=Cli.states, initial='start', transitions=Cli.transitions)
+        self.machine.on_enter_hello("welcome_message")
+        if config.has_section("history"):
+            if config.has_option("history","url"):
+                self.url = config.get("history","url")
+            else:
+                self.url = None
+            if config.has_option("history","method"):
+                self.method = config.get("history","method")
+            else:
+                self.method = None
+            if config.has_option("history","payload"):
+                self.payload = base64.b64decode(config.get("history","payload"))
+            else:
+                self.payload = None
+        else:
+            config.add_section("history")
+            self.url = None
+            self.method = None
+            self.payload = None
+        self.config = config
+
+    def start(self):
+        self.say_hello()
+        self.ask_for_url()
+    def is_finished(self):
+        return self.state == "result"
+
+    def input(self):
+        s = self.machine.get_state(self.state)
+        if isinstance(s,IOState):
+            if s.multiline:
+                pass
+            else:
+                content = sys.stdin.readline().strip()
+
+            s.handler(self, content)
+        pass
 
 
 def authorize_cli(args):
-    print args.token
+    print (args.token)
+    c = read_config()
+    c.add_section('main')
+    c.set("main","token",args.token)
+    save_config(c)
 
 
-methods = ["GET","POST","PUT","DELETE","PATCH"]
+
 
 def progress(count, total, suffix=''):
     bar_len = 60
@@ -71,50 +310,18 @@ def do_attack(url, attacks):
     return attacks
 
 def scan_cli(args):
-    print "What is the URL?"
-    url = sys.stdin.readline().strip()
-    print "Choose method:"
-    for i, method in enumerate(methods):
-        print "[{0}] {1}".format(i+1,method)
+    try:
+        config = read_config()
+        c = Cli(config)
+        c.start()
+        while not c.is_finished():
+            c.input()
+    finally:
+        save_config(config)
 
-    userinput = sys.stdin.readline()
-    method_i = int(userinput)
-    method = methods[method_i-1]
-    payload = {
-        "url": url,
-        "method": method,
-        "content": None
-    }
-    r = requests.post(os.environ.get('RSC_URI')+'/api/snippet/download', json=payload)
-    size = int(r.headers['Content-Length'].strip())
-    bytes = 0
-    for buf in r.iter_content(1024):
-        if buf:
-            progress(bytes, size, "downloading attacks")
-            bytes += len(buf)
-    progress(1, 1, "downloaded attacks")
-    print "\nattacks downloaded"
-    if r.status_code == 200:
-        resp = r.json()
-        attacks = cPickle.loads(resp['payloads'].encode("utf-8"))
-        attacks_with_responses = {}
-        for k,v in attacks.iteritems():
-            responses = do_attack(k, v)
-            attacks_with_responses[k] = responses
 
-        payload['payloads'] = cPickle.dumps(attacks_with_responses)
-        r = requests.post(os.environ.get('RSC_URI')+'/api/snippet/upload', json=payload)
-        print "Report:"
-        endpoints_with_methods = r.json()['report']
-        issues = set()
-        for endpoint in endpoints_with_methods:
-            for v in endpoint.get('vulnerabilities'):
-                issues.add(v.get('name'))
 
-        for i in issues:
-            print "{}, level high".format(i)
 
-        print "For full report head to: https://www.restsecured.xyz/blablabla1234"
 
 parser = argparse.ArgumentParser(description='Rest Secured co-pilot',prog="rsc")
 subparsers = parser.add_subparsers()
