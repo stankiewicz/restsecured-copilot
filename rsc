@@ -9,11 +9,14 @@ import socket
 import sys
 import time
 import urlparse
+import logging
 from ConfigParser import SafeConfigParser
 
 import requests
 from transitions import Machine, State
 
+
+logger = logging.getLogger(__file__)
 
 class IOState(State):
     def __init__(self, name, on_enter=None, on_exit=None,
@@ -39,6 +42,9 @@ def save_config(config):
     with open(os.path.join(config_path, 'config.ini'), 'wb') as configfile:
         config.write(configfile)
 
+
+def read_uri(config):
+    return config.get("main","uri")
 
 class Cli(object):
     def explain_url(self):
@@ -85,10 +91,21 @@ class Cli(object):
             self.ask_for_payload()
 
     def explain_payload(self):
-        pass
+        print("Method chosen suggests you have example payload. Press Ctrl-D when finished:")
 
-    def validate_payload(self, line):
-        pass
+
+
+    def validate_payload(self, content):
+
+        if len(content.strip())==0:
+            #self.ask_for_special_headers()
+            self.payload = None
+        else:
+            self.payload = content
+            #self.ask_mime()
+        self.ask_for_special_headers()
+
+    mimes = ["application/x-www-form-urlencoded", "application/json", "application/xml"]
 
     def explain_mime(self):
         pass
@@ -97,10 +114,29 @@ class Cli(object):
         pass
 
     def explain_mime(self):
-        pass
+        print("Choose MIME:")
+        for i, m in enumerate(Cli.mimes):
+            print("[{0}] {1}".format(i + 1, m))
+        print("[{}]: ".format(self.mime if self.mime is not None else " "), end="")
+
 
     def validate_mime(self, line):
-        pass
+        try:
+            if len(line) > 0:
+                m_i = int(line)
+                mime = Cli.mimes[m_i - 1]
+                self.mime = mime
+                self.config.set("history", "mime", mime)
+            else:
+                if not self.method:
+                    self.explain_method()
+                    return
+        except Exception:
+            self.explain_method()
+            return
+
+        self.ask_for_special_headers()
+
 
     def explain_authheaders(self):
 
@@ -133,9 +169,10 @@ class Cli(object):
         payload = {
             "url": self.url,
             "method": self.method,
-            "content": None
+            "content": self.payload
         }
-        r = requests.post(os.environ.get('RSC_URI') + '/api/snippet/download', json=payload)
+        print (payload)
+        r = requests.post(read_uri(self.config) + '/api/snippet/download', json=payload)
         size = int(r.headers['Content-Length'].strip())
         bytes = 0
         for buf in r.iter_content(1024):
@@ -153,7 +190,7 @@ class Cli(object):
                 attacks_with_responses[k] = responses
 
             payload['payloads'] = cPickle.dumps(attacks_with_responses)
-            r = requests.post(os.environ.get('RSC_URI') + '/api/snippet/upload', json=payload)
+            r = requests.post(read_uri(self.config) + '/api/snippet/upload', json=payload)
             print("Report:")
             self.endpoints_with_methods = r.json()['report']
             self.show_result()
@@ -192,8 +229,8 @@ class Cli(object):
         {'trigger': 'ask_for_url', 'source': ['hello', 'other'], 'dest': 'url'},
         {'trigger': 'ask_for_method', 'source': 'url', 'dest': 'method'},
         {'trigger': 'ask_for_payload', 'source': 'method', 'dest': 'payload'},
-        {'trigger': 'verify_mime', 'source': 'payload', 'dest': 'mime'},
-        {'trigger': 'ask_for_special_headers', 'source': ['mime', 'method'], 'dest': 'authheaders'},
+        {'trigger': 'ask_mime', 'source': 'payload', 'dest': 'mime'},
+        {'trigger': 'ask_for_special_headers', 'source': ['payload','mime', 'method'], 'dest': 'authheaders'},
         {'trigger': 'ask_for_next', 'source': 'authheaders', 'dest': 'other'},
         {'trigger': 'do_scan', 'source': 'other', 'dest': 'scan'},
         {'trigger': 'show_result', 'source': 'scan', 'dest': 'result'},
@@ -212,6 +249,10 @@ class Cli(object):
                 self.url = config.get("history", "url")
             else:
                 self.url = None
+            if config.has_option("history", "mime"):
+                self.mime = config.get("history", "mime")
+            else:
+                self.mime = None
             if config.has_option("history", "method"):
                 self.method = config.get("history", "method")
             else:
@@ -236,11 +277,17 @@ class Cli(object):
 
     def input(self):
         s = self.machine.get_state(self.state)
+        logger.debug("Reading input while in state - {}".format(s.name))
         if isinstance(s, IOState):
+            logger.debug("Reading input while in state - {}, multi - {}".format(s.name, s.multiline))
             if s.multiline:
-                pass
+                content = ""
+                for line in sys.stdin:
+                    content += line
+                sys.stdin.readline()
             else:
-                content = sys.stdin.readline().strip()
+                line = sys.stdin.readline()
+                content = line.strip()
 
             s.handler(self, content)
         pass
@@ -249,8 +296,14 @@ class Cli(object):
 def authorize_cli(args):
     print(args.token)
     c = read_config()
-    c.add_section('main')
+
+    # test call
+
+    # if succeeds, save
+    if not c.has_section("main"):
+        c.add_section('main')
     c.set("main", "token", args.token)
+    c.set("main","uri",args.uri)
     save_config(c)
 
 
@@ -319,15 +372,24 @@ def scan_cli(args):
 
 
 parser = argparse.ArgumentParser(description='Rest Secured co-pilot', prog="rsc")
+parser.add_argument("-v", type=bool, dest='verbose', required=False,
+                           help="set verbose logging")
 subparsers = parser.add_subparsers()
 parser_foo = subparsers.add_parser('authorize')
-parser_foo.add_argument('token', type=str)
+parser_foo.add_argument('token', type=str, help="Authorization token from Rest Secured")
+parser_foo.add_argument('uri', type=str, default='https://www.restsecured.xyz', help="Override Rest Secured URI")
 parser_foo.set_defaults(func=authorize_cli)
 
 parser_bar = subparsers.add_parser('scan')
 parser_bar.set_defaults(func=scan_cli)
 
 if __name__ == '__main__':
-    os.environ['RSC_URI'] = 'http://127.0.0.1:5000'
     args = parser.parse_args(sys.argv[1:])
+    ch = logging.StreamHandler()
+    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    ch.setFormatter(formatter)
+    logger.addHandler(ch)
+    if args.verbose:
+        logger.setLevel(logging.DEBUG)
+        ch.setLevel(logging.DEBUG)
     args.func(args)
