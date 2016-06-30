@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+# -*- coding=utf-8 -*-
 from __future__ import print_function
 
 import argparse
@@ -172,7 +173,7 @@ class Cli(object):
             "content": self.payload
         }
         print (payload)
-        r = requests.post(read_uri(self.config) + '/api/snippet/download', json=payload)
+        r = requests.post(read_uri(self.config) + '/api/snippet/download',headers = {"Authorization":"Bearer " + self.config.get("main","token")},  json=payload)
         size = int(r.headers['Content-Length'].strip())
         bytes = 0
         for buf in r.iter_content(1024):
@@ -190,9 +191,10 @@ class Cli(object):
                 attacks_with_responses[k] = responses
 
             payload['payloads'] = cPickle.dumps(attacks_with_responses)
-            r = requests.post(read_uri(self.config) + '/api/snippet/upload', json=payload)
+            r = requests.post(read_uri(self.config) + '/api/snippet/upload',headers = {"Authorization":"Bearer " + self.config.get("main","token")}, json=payload)
             print("Report:")
             self.endpoints_with_methods = r.json()['report']
+            self.report_url = r.json()['view']
             self.show_result()
 
     def present_report(self):
@@ -204,7 +206,7 @@ class Cli(object):
         for i in issues:
             print("{}, level high".format(i))
 
-        print("For full report head to: https://www.restsecured.xyz/blablabla1234")
+        print("For full report head to: {}{}".format(read_uri(self.config), self.report_url))
 
     #              -----------------------------------\
     #             V                                   |
@@ -294,17 +296,21 @@ class Cli(object):
 
 
 def authorize_cli(args):
-    print(args.token)
     c = read_config()
 
     # test call
+    r = requests.get(args.uri + '/api/ping', headers = {"Authorization":"Bearer " + args.token})
 
-    # if succeeds, save
-    if not c.has_section("main"):
-        c.add_section('main')
-    c.set("main", "token", args.token)
-    c.set("main","uri",args.uri)
-    save_config(c)
+    if r.status_code == 200:
+        # if succeeds, save
+        if not c.has_section("main"):
+            c.add_section('main')
+        c.set("main", "token", args.token)
+        c.set("main","uri",args.uri)
+        save_config(c)
+        print (u" ✓ Cli is authorized to run scans.")
+    else:
+        print (u" ✕ Something went wrong, check token.")
 
 
 def progress(count, total, suffix=''):
@@ -339,6 +345,7 @@ def do_attack(url, attacks):
         port = 80
     if ":" in netloc:
         netloc, port = netloc.split(":", 1)
+
     for i, attack in enumerate(attacks):
         progress(i, len(attacks), attack['injection'].get('attack'))
         sock = setup_socket(netloc, int(port), ssl)
