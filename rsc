@@ -233,7 +233,7 @@ class Cli(object):
         {'trigger': 'ask_for_payload', 'source': 'method', 'dest': 'payload'},
         {'trigger': 'ask_mime', 'source': 'payload', 'dest': 'mime'},
         {'trigger': 'ask_for_special_headers', 'source': ['payload','mime', 'method'], 'dest': 'authheaders'},
-        {'trigger': 'ask_for_next', 'source': 'authheaders', 'dest': 'other'},
+        {'trigger': 'ask_for_next', 'source': 'authheaders', 'dest': 'scan'},
         {'trigger': 'do_scan', 'source': 'other', 'dest': 'scan'},
         {'trigger': 'show_result', 'source': 'scan', 'dest': 'result'},
 
