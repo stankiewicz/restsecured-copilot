@@ -151,6 +151,8 @@ class Cli(object):
             self.ask_for_next()
         else:
             # add to list
+            self.headers.append(line.strip())
+            print("[ ]: ", end="")
             pass
 
     def explain_other(self):
@@ -170,9 +172,9 @@ class Cli(object):
         payload = {
             "url": self.url,
             "method": self.method,
-            "content": self.payload
+            "content": self.payload,
+            "headers": self.headers
         }
-        print (payload)
         r = requests.post(read_uri(self.config) + '/api/snippet/download',headers = {"Authorization":"Bearer " + self.config.get("main","token")},  json=payload)
         size = int(r.headers['Content-Length'].strip())
         bytes = 0
@@ -268,6 +270,7 @@ class Cli(object):
             self.url = None
             self.method = None
             self.payload = None
+        self.headers = []
         self.config = config
 
     def start(self):
