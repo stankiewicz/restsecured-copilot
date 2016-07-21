@@ -142,7 +142,7 @@ class Cli(object):
     def explain_authheaders(self):
 
         print(
-            "Do you have some special required http headers? Paste them in format header_name=header_value. Leave empty if you finished or want to skip.")
+            "Do you have some special required http headers? Paste them in format header_name: header_value. Leave empty if you finished or want to skip.")
         print("[ ]: ", end="")
 
     def validate_authheaders(self, line):
@@ -153,7 +153,6 @@ class Cli(object):
             # add to list
             self.headers.append(line.strip())
             print("[ ]: ", end="")
-            pass
 
     def explain_other(self):
         print("Do you have another example? Y/N")
@@ -198,6 +197,8 @@ class Cli(object):
             self.endpoints_with_methods = r.json()['report']
             self.report_url = r.json()['view']
             self.show_result()
+        else:
+            raise Exception("Failed to download attacks.")
 
     def present_report(self):
         issues = set()
