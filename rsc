@@ -387,7 +387,7 @@ parser.add_argument("-v", type=bool, dest='verbose', required=False,
 subparsers = parser.add_subparsers()
 parser_foo = subparsers.add_parser('authorize')
 parser_foo.add_argument('token', type=str, help="Authorization token from Rest Secured")
-parser_foo.add_argument('uri', required=False,  type=str, default='https://www.restsecured.xyz', help="Override Rest Secured URI")
+parser_foo.add_argument('uri', type=str, default='https://www.restsecured.xyz', help="Override Rest Secured URI", nargs='?')
 parser_foo.set_defaults(func=authorize_cli)
 
 parser_bar = subparsers.add_parser('scan')
