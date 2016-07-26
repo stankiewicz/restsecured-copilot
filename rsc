@@ -1,15 +1,15 @@
 #!/usr/bin/env python
 # -*- coding=utf-8 -*-
 from __future__ import print_function
-
+import json
 import argparse
 import base64
-import cPickle
 import os
 import socket
 import sys
 import time
 import urlparse
+import umsgpack
 import logging
 from ConfigParser import SafeConfigParser
 
@@ -185,13 +185,13 @@ class Cli(object):
         print("\nattacks downloaded")
         if r.status_code == 200:
             resp = r.json()
-            attacks = cPickle.loads(resp['payloads'].encode("utf-8"))
+            attacks = umsgpack.loads(base64.b64decode(resp['payloads']))
             attacks_with_responses = {}
             for k, v in attacks.iteritems():
                 responses = do_attack(k, v)
                 attacks_with_responses[k] = responses
 
-            payload['payloads'] = cPickle.dumps(attacks_with_responses)
+            payload['payloads'] = base64.b64encode(umsgpack.dumps(attacks_with_responses))
             r = requests.post(read_uri(self.config) + '/api/snippet/upload',headers = {"Authorization":"Bearer " + self.config.get("main","token")}, json=payload)
             print("Report:")
             self.endpoints_with_methods = r.json()['report']
